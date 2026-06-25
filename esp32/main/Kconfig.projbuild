@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+menu "HelixScreen"
+
+    config HELIX_WIFI_SSID
+        string "WiFi SSID"
+        default "myssid"
+        help
+            SSID of the network the printer's Moonraker host is on.
+
+    config HELIX_WIFI_PASSWORD
+        string "WiFi Password"
+        default "mypassword"
+        help
+            WPA2 password. Leave blank for an open network.
+
+    config HELIX_MOONRAKER_HOST
+        string "Moonraker host"
+        default "mainsailos.local"
+        help
+            Hostname or IP of the Moonraker instance (no scheme, no port).
+            mDNS .local names work if CONFIG_LWIP_DNS_SUPPORT_MDNS_QUERIES is on.
+
+    config HELIX_MOONRAKER_PORT
+        int "Moonraker port"
+        default 7125
+        help
+            Moonraker's HTTP/WebSocket port. Default 7125.
+
+    config HELIX_MOONRAKER_API_KEY
+        string "Moonraker API key (optional)"
+        default ""
+        help
+            Only needed if Moonraker's [authorization] requires it for your
+            client's IP. Leave blank for a trusted LAN client.
+
+endmenu
