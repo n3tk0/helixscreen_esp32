@@ -49,11 +49,16 @@ void wifi_connect_blocking(void)
         IP_EVENT, IP_EVENT_STA_GOT_IP, &on_wifi_event, NULL, NULL));
 
     wifi_config_t wifi_cfg = { 0 };
+    // wifi_cfg is zero-initialized, so the full buffer is safe — the WiFi
+    // driver accepts a 32-byte SSID / 64-byte PSK with no NUL terminator.
     strncpy((char *)wifi_cfg.sta.ssid, CONFIG_HELIX_WIFI_SSID,
-            sizeof(wifi_cfg.sta.ssid) - 1);
+            sizeof(wifi_cfg.sta.ssid));
     strncpy((char *)wifi_cfg.sta.password, CONFIG_HELIX_WIFI_PASSWORD,
-            sizeof(wifi_cfg.sta.password) - 1);
-    wifi_cfg.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+            sizeof(wifi_cfg.sta.password));
+    // Drop the security floor for open networks, else the join is rejected.
+    wifi_cfg.sta.threshold.authmode =
+        (strlen(CONFIG_HELIX_WIFI_PASSWORD) == 0) ? WIFI_AUTH_OPEN
+                                                  : WIFI_AUTH_WPA2_PSK;
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg));

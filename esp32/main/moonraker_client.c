@@ -217,6 +217,10 @@ void moonraker_client_start(void)
 {
     if (!s_lock) {
         s_lock = xSemaphoreCreateMutex();
+        if (!s_lock) {
+            ESP_LOGE(TAG, "failed to create state mutex");
+            return;
+        }
         memset(&s_state, 0, sizeof(s_state));
         strcpy(s_state.print_state, "offline");
     }
@@ -235,6 +239,10 @@ void moonraker_client_start(void)
     };
 
     s_client = esp_websocket_client_init(&cfg);
+    if (!s_client) {
+        ESP_LOGE(TAG, "failed to init WebSocket client");
+        return;
+    }
     esp_websocket_register_events(s_client, WEBSOCKET_EVENT_ANY,
                                   ws_event_handler, NULL);
     esp_websocket_client_start(s_client);

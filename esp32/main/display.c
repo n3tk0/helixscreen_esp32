@@ -56,13 +56,14 @@ static void lvgl_tick_cb(void *arg)
 
 bool display_lvgl_lock(int timeout_ms)
 {
+    if (!s_lvgl_mutex) return false;
     TickType_t ticks = (timeout_ms < 0) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
     return xSemaphoreTakeRecursive(s_lvgl_mutex, ticks) == pdTRUE;
 }
 
 void display_lvgl_unlock(void)
 {
-    xSemaphoreGiveRecursive(s_lvgl_mutex);
+    if (s_lvgl_mutex) xSemaphoreGiveRecursive(s_lvgl_mutex);
 }
 
 static void panel_init(void)
@@ -125,10 +126,24 @@ void display_init(void)
 
     // Two partial draw buffers (1/10 screen each) in PSRAM. Enough for smooth
     // partial-refresh rendering without eating internal SRAM.
-    const size_t buf_px = HELIX_LCD_H_RES * HELIX_LCD_V_RES / 10;
-    lv_color_t *buf1 = heap_caps_malloc(buf_px * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
-    lv_color_t *buf2 = heap_caps_malloc(buf_px * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
-    assert(buf1 && buf2);
+    const size_t buf_px   = HELIX_LCD_H_RES * HELIX_LCD_V_RES / 10;
+    const size_t buf_size = buf_px * sizeof(lv_color_t);
+    // Prefer PSRAM; fall back to internal SRAM (~30KB total) on boards without
+    // PSRAM rather than aborting on a failed assert.
+    lv_color_t *buf1 = heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM);
+    if (!buf1) {
+        ESP_LOGW(TAG, "buf1 PSRAM alloc failed, using internal SRAM");
+        buf1 = heap_caps_malloc(buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
+    lv_color_t *buf2 = heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM);
+    if (!buf2) {
+        ESP_LOGW(TAG, "buf2 PSRAM alloc failed, using internal SRAM");
+        buf2 = heap_caps_malloc(buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
+    if (!buf1 || !buf2) {
+        ESP_LOGE(TAG, "failed to allocate display buffers");
+        return;
+    }
 
     lv_display_t *disp = lv_display_create(HELIX_LCD_H_RES, HELIX_LCD_V_RES);
     lv_display_set_flush_cb(disp, lvgl_flush_cb);

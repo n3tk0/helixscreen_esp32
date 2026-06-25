@@ -36,7 +36,7 @@ static void on_estop(lv_event_t *e)
 static void on_pause_resume(lv_event_t *e)
 {
     (void)e;
-    helix_printer_state_t st;
+    helix_printer_state_t st = {0};
     moonraker_get_state(&st);
     if (strcmp(st.print_state, "printing") == 0) {
         moonraker_print_pause();
@@ -85,7 +85,7 @@ static lv_obj_t *make_temp_card(lv_obj_t *parent, const char *title)
 static void refresh_cb(lv_timer_t *timer)
 {
     (void)timer;
-    helix_printer_state_t st;
+    helix_printer_state_t st = {0};
     moonraker_get_state(&st);
 
     char buf[64];
