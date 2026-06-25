@@ -7,14 +7,22 @@
 #include "lvgl.h"
 #include "moonraker_client.h"
 
-// HelixScreen palette (subset of the desktop design tokens, hard-coded here
-// since we don't run the XML/token engine on the MCU yet).
-#define COL_BG        lv_color_hex(0x14161A)
-#define COL_CARD      lv_color_hex(0x1E2127)
-#define COL_ACCENT    lv_color_hex(0x3B82F6)
-#define COL_TEXT      lv_color_hex(0xE6E8EB)
-#define COL_MUTED     lv_color_hex(0x8A9099)
-#define COL_DANGER    lv_color_hex(0xEF4444)
+// HelixScreen dark-theme design tokens, lifted verbatim from the parent
+// project's default theme (assets/config/themes/defaults/helixscreen.json).
+// We don't run the XML/token engine on the MCU, so the values are inlined.
+#define COL_BG        lv_color_hex(0x19191C)  // screen_bg
+#define COL_CARD      lv_color_hex(0x202023)  // card_bg
+#define COL_BORDER    lv_color_hex(0x36363C)  // border
+#define COL_ACCENT    lv_color_hex(0x3A7CC8)  // primary
+#define COL_TEXT      lv_color_hex(0xE8E8EC)  // text
+#define COL_MUTED     lv_color_hex(0xB8B8C0)  // text_muted
+#define COL_SUCCESS   lv_color_hex(0x5CB85C)  // success
+#define COL_DANGER    lv_color_hex(0xD94848)  // danger
+
+// Helix typeface (Noto Sans), restored as LVGL font arrays. Body text uses
+// noto_sans_14; the status header + temperature values use the bold 20.
+LV_FONT_DECLARE(noto_sans_14);
+LV_FONT_DECLARE(noto_sans_bold_20);
 
 static lv_obj_t *s_lbl_status;
 static lv_obj_t *s_lbl_nozzle;
@@ -73,6 +81,7 @@ static lv_obj_t *make_temp_card(lv_obj_t *parent, const char *title)
 
     lv_obj_t *v = lv_label_create(card);
     lv_obj_set_style_text_color(v, COL_TEXT, 0);
+    lv_obj_set_style_text_font(v, &noto_sans_bold_20, 0);
     lv_label_set_text(v, "--");
     return v;   // return the value label so the caller can update it
 }
@@ -118,6 +127,8 @@ void ui_create(void)
 {
     lv_obj_t *scr = lv_screen_active();
     lv_obj_set_style_bg_color(scr, COL_BG, 0);
+    // Make the Helix body font the screen-wide default; children inherit it.
+    lv_obj_set_style_text_font(scr, &noto_sans_14, 0);
     lv_obj_set_style_pad_all(scr, 8, 0);
     lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(scr, LV_FLEX_ALIGN_START,
@@ -127,6 +138,7 @@ void ui_create(void)
     // --- Header: status ---
     s_lbl_status = lv_label_create(scr);
     lv_obj_set_style_text_color(s_lbl_status, COL_ACCENT, 0);
+    lv_obj_set_style_text_font(s_lbl_status, &noto_sans_bold_20, 0);
     lv_label_set_text(s_lbl_status, "starting");
 
     // --- Temp row: two cards ---

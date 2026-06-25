@@ -55,9 +55,10 @@ CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 CONFIG_LV_COLOR_DEPTH_16=y
 CONFIG_LV_TICK_CUSTOM=y
 CONFIG_LV_USE_OS=y
-# Default font + a couple of sizes for the dashboard.
+# Montserrat 14 stays as LVGL's compile-time LV_FONT_DEFAULT (used until the UI
+# applies the Helix font on the active screen, and as a safe fallback). The
+# dashboard itself renders with the bundled Noto Sans fonts (src/fonts/).
 CONFIG_LV_FONT_MONTSERRAT_14=y
-CONFIG_LV_FONT_MONTSERRAT_20=y
 CONFIG_LV_FONT_DEFAULT_MONTSERRAT_14=y
 # Let LVGL's heap use PSRAM-backed malloc rather than its own static arena.
 CONFIG_LV_USE_STDLIB_MALLOC_CLIB=y

@@ -6,6 +6,9 @@ idf_component_register(
         "moonraker_client.c"
         "display.c"
         "ui.c"
+        # Helix typeface — LVGL font arrays restored from the parent project
+        "fonts/noto_sans_14.c"
+        "fonts/noto_sans_bold_20.c"
     INCLUDE_DIRS
         "."
     REQUIRES

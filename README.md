@@ -26,6 +26,10 @@ pins in `src/display.c`.
 - ST7789 + LVGL 9 display bring-up with PSRAM draw buffers (`display.c`)
 - A live dashboard: nozzle/bed temps, print state, file, progress bar, and
   **Pause/Resume** + **E-STOP** buttons wired to real RPCs (`ui.c`)
+- **Real Helix look**: the actual Noto Sans typeface (`src/fonts/`) and the
+  exact dark-theme design tokens from the parent project's
+  `helixscreen.json`, inlined as `COL_*` in `ui.c`
+- A Moonraker method roadmap reference: [`docs/moonraker-reference.md`](docs/moonraker-reference.md)
 
 ## What's stubbed / TODO (clearly marked in code)
 
@@ -68,12 +72,15 @@ GitHub runners via `.github/workflows/esp32-firmware.yml`.
 ├── platformio.ini         PlatformIO env (board, framework, partitions)
 ├── sdkconfig.defaults      target, PSRAM, LVGL, flash/partition defaults
 ├── partitions.csv          16MB flash layout
+├── docs/
+│   └── moonraker-reference.md  full Moonraker method roadmap
 └── src/
     ├── app_main.c          boot order + LVGL main loop
     ├── wifi.c/.h           WiFi station bring-up
     ├── moonraker_client.c/.h   WebSocket JSON-RPC client + snapshot
     ├── display.c/.h        ST7789 + LVGL wiring (PINS HERE)
-    ├── ui.c/.h             the dashboard
+    ├── ui.c/.h             the dashboard (Helix tokens inlined)
+    ├── fonts/              Noto Sans LVGL font arrays (real Helix typeface)
     ├── CMakeLists.txt       IDF main-component register
     ├── Kconfig.projbuild    menuconfig options (WiFi / Moonraker)
     └── idf_component.yml     managed component deps
