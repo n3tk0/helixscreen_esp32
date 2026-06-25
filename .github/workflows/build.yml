@@ -3,8 +3,16 @@ name: Build
 on:
   push:
     branches: [ main, "claude/**" ]
+    # Skip the desktop matrix when a change touches only the ESP32 firmware —
+    # that has its own workflow (esp32-firmware.yml).
+    paths-ignore:
+      - 'esp32/**'
+      - '.github/workflows/esp32-firmware.yml'
   pull_request:
     branches: [ main ]
+    paths-ignore:
+      - 'esp32/**'
+      - '.github/workflows/esp32-firmware.yml'
 
 jobs:
   compile-ubuntu:
