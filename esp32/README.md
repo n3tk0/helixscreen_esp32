@@ -13,7 +13,7 @@ WebSocket JSON-RPC API**.
 
 **Target board:** Waveshare ESP32-S3-Touch-LCD-2.8 (ESP32-S3, ST7789 320×240,
 capacitive touch, WiFi). Other ESP32-S3 + SPI-LCD boards work after adjusting
-pins in `main/display.c`.
+pins in `src/display.c`.
 
 ## What works in this skeleton
 
@@ -37,35 +37,42 @@ pins in `main/display.c`.
 
 ## Build & flash
 
-Requires **ESP-IDF v5.1+**.
+Built with **[PlatformIO](https://platformio.org/)** using the **ESP-IDF**
+framework (same toolchain as the ESP32_Logger project). The pinned
+`platform = espressif32` provides ESP-IDF 5.x.
 
 ```bash
-cd esp32
-idf.py set-target esp32s3
+# from the repo root
+pio run            -d esp32      # build
+pio run -t upload  -d esp32      # flash
+pio device monitor -d esp32      # serial monitor
 
-# Set WiFi creds + Moonraker host under:  HelixScreen  →  ...
-idf.py menuconfig
-
-idf.py build flash monitor
+# Set WiFi creds + Moonraker host (HelixScreen menu):
+pio run -t menuconfig -d esp32
 ```
 
-On first build the component manager fetches `lvgl/lvgl` and
-`espressif/esp_websocket_client` (see `main/idf_component.yml`) — needs network
-access once.
+On first build PlatformIO installs the ESP-IDF toolchain, and the IDF component
+manager fetches `lvgl/lvgl` and `espressif/esp_websocket_client` (see
+`src/idf_component.yml`) — needs network access once. CI builds the same way on
+GitHub runners via `.github/workflows/esp32-firmware.yml`.
+
+> Plain `idf.py` is not wired up — this project uses PlatformIO's `src/` layout.
+> Use `pio run -t menuconfig` for the ESP-IDF config UI.
 
 ## Layout
 
 ```
 esp32/
-├── CMakeLists.txt          top-level ESP-IDF project
-├── sdkconfig.defaults      target, PSRAM, LVGL, partition defaults
+├── platformio.ini         PlatformIO env (board, framework, partitions)
+├── sdkconfig.defaults      target, PSRAM, LVGL, flash/partition defaults
 ├── partitions.csv          16MB flash layout
-└── main/
+└── src/
     ├── app_main.c          boot order + LVGL main loop
     ├── wifi.c/.h           WiFi station bring-up
     ├── moonraker_client.c/.h   WebSocket JSON-RPC client + snapshot
     ├── display.c/.h        ST7789 + LVGL wiring (PINS HERE)
     ├── ui.c/.h             the dashboard
+    ├── CMakeLists.txt       IDF main-component register
     ├── Kconfig.projbuild    menuconfig options (WiFi / Moonraker)
     └── idf_component.yml     managed component deps
 ```

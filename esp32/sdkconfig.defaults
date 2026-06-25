@@ -10,8 +10,8 @@
 CONFIG_IDF_TARGET="esp32s3"
 
 # --- Flash: 16MB, custom partition table (see partitions.csv) ---
-CONFIG_ESPTOOLPID_FLASHSIZE_16MB=y
-CONFIG_ESPTOOLPID_FLASHSIZE="16MB"
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
@@ -37,6 +37,10 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 # --- WebSocket / TLS: ws:// to a LAN Moonraker by default. Enable the mbedTLS
 #     bits below only if you point at a wss:// endpoint. ---
 CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
+
+# --- mDNS: the default Moonraker host (mainsailos.local) is a .local name, so
+#     LWIP must answer mDNS queries to resolve it. Drop this if you use an IP. ---
+CONFIG_LWIP_DNS_SUPPORT_MDNS_QUERIES=y
 
 # --- Logging ---
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y

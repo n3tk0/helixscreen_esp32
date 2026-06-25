@@ -35,16 +35,33 @@ static const char *TAG = "display";
 
 static SemaphoreHandle_t      s_lvgl_mutex;
 static esp_lcd_panel_handle_t s_panel;
+static esp_lcd_panel_io_handle_t s_io;
 
-// LVGL 9: flush callback hands a finished region to the panel.
+// esp_lcd fires this from the SPI ISR once the queued color transfer has
+// actually finished DMA'ing out of the LVGL buffer. ONLY here is the buffer
+// safe to reuse — signalling flush_ready earlier lets LVGL redraw into a
+// buffer the DMA is still reading, causing tearing/corruption on real hardware.
+static bool on_color_trans_done(esp_lcd_panel_io_handle_t io,
+                                esp_lcd_panel_io_event_data_t *edata,
+                                void *user_ctx)
+{
+    (void)io;
+    (void)edata;
+    lv_display_flush_ready((lv_display_t *)user_ctx);
+    return false;   // no higher-priority task woken
+}
+
+// LVGL 9: flush callback hands a finished region to the panel. draw_bitmap is
+// asynchronous (trans_queue_depth > 0) — we do NOT call flush_ready here; the
+// on_color_trans_done callback does, once the SPI DMA completes.
 static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px)
 {
+    (void)disp;
     // ST7789 over SPI expects big-endian RGB565; LVGL renders little-endian.
     lv_draw_sw_rgb565_swap(px, lv_area_get_width(area) * lv_area_get_height(area));
 
     esp_lcd_panel_draw_bitmap(s_panel, area->x1, area->y1,
                               area->x2 + 1, area->y2 + 1, px);
-    lv_display_flush_ready(disp);
 }
 
 // Drive LVGL's millisecond tick from an esp_timer.
@@ -84,7 +101,6 @@ static void panel_init(void)
     };
     ESP_ERROR_CHECK(spi_bus_initialize(LCD_SPI_HOST, &bus, SPI_DMA_CH_AUTO));
 
-    esp_lcd_panel_io_handle_t io = NULL;
     esp_lcd_panel_io_spi_config_t io_cfg = {
         .dc_gpio_num = PIN_LCD_DC,
         .cs_gpio_num = PIN_LCD_CS,
@@ -95,14 +111,14 @@ static void panel_init(void)
         .trans_queue_depth = 10,
     };
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi(
-        (esp_lcd_spi_bus_handle_t)LCD_SPI_HOST, &io_cfg, &io));
+        (esp_lcd_spi_bus_handle_t)LCD_SPI_HOST, &io_cfg, &s_io));
 
     esp_lcd_panel_dev_config_t panel_cfg = {
         .reset_gpio_num = PIN_LCD_RST,
         .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
         .bits_per_pixel = 16,
     };
-    ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(io, &panel_cfg, &s_panel));
+    ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(s_io, &panel_cfg, &s_panel));
 
     ESP_ERROR_CHECK(esp_lcd_panel_reset(s_panel));
     ESP_ERROR_CHECK(esp_lcd_panel_init(s_panel));
@@ -147,8 +163,14 @@ void display_init(void)
 
     lv_display_t *disp = lv_display_create(HELIX_LCD_H_RES, HELIX_LCD_V_RES);
     lv_display_set_flush_cb(disp, lvgl_flush_cb);
-    lv_display_set_buffers(disp, buf1, buf2, buf_px * sizeof(lv_color_t),
+    lv_display_set_buffers(disp, buf1, buf2, buf_size,
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
+
+    // Signal LVGL flush completion only when the async SPI transfer finishes.
+    const esp_lcd_panel_io_callbacks_t io_cbs = {
+        .on_color_trans_done = on_color_trans_done,
+    };
+    ESP_ERROR_CHECK(esp_lcd_panel_io_register_event_callbacks(s_io, &io_cbs, disp));
 
     const esp_timer_create_args_t tick_args = {
         .callback = &lvgl_tick_cb,

@@ -11,13 +11,16 @@ idf_component_register(
     REQUIRES
         # esp_lcd: ST7789 panel driver lives here (built into IDF).
         esp_lcd
-        # esp_websocket_client + cJSON pulled in as managed components
-        # (see idf_component.yml) but listed here so headers resolve.
+        # esp_websocket_client pulled in as a managed component
+        # (see idf_component.yml); json (cJSON) is bundled with IDF.
         esp_websocket_client
         json
         nvs_flash
         esp_wifi
-        esp_driver_gpio
-        esp_driver_spi
-        esp_driver_i2c
+        esp_event
+        esp_netif
+        esp_timer
+        # "driver" is the monolithic alias that resolves on every IDF 5.x
+        # (the esp_driver_gpio/spi/i2c split only exists on 5.2+).
+        driver
 )

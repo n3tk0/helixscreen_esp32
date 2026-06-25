@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Builds the ESP32-S3 firmware (esp32/) with PlatformIO + ESP-IDF on GitHub's
+# runners. Scoped to esp32/** so it stays independent of the main Linux build.
+name: ESP32 Firmware
+
+on:
+  push:
+    branches: [ main, "claude/**" ]
+    paths:
+      - 'esp32/**'
+      - '.github/workflows/esp32-firmware.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'esp32/**'
+      - '.github/workflows/esp32-firmware.yml'
+
+jobs:
+  build:
+    name: Build (PlatformIO / ESP-IDF)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # The esp32/ project fetches its own deps (LVGL, esp_websocket_client)
+          # via the IDF component manager — the repo's heavy submodules are not
+          # needed here.
+          submodules: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache PlatformIO + pip
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('esp32/platformio.ini', 'esp32/src/idf_component.yml') }}
+          restore-keys: |
+            pio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Build firmware
+        run: pio run -d esp32
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: helix-esp32s3-firmware
+          path: |
+            esp32/.pio/build/*/firmware.bin
+            esp32/.pio/build/*/firmware.elf
+          if-no-files-found: warn
