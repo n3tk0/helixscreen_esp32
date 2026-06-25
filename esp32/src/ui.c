@@ -2,6 +2,7 @@
 #include "ui.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #include "lvgl.h"
 #include "moonraker_client.h"
