@@ -44,8 +44,7 @@ pins in `src/display.c`.
 ## Build & flash
 
 Built with **[PlatformIO](https://platformio.org/)** using the **ESP-IDF**
-framework (same toolchain as the ESP32_Logger project). The pinned
-`platform = espressif32` provides ESP-IDF 5.x.
+framework. The pinned `platform = espressif32` provides ESP-IDF 5.x.
 
 ```bash
 # from the repo root
