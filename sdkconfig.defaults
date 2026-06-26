@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Default sdkconfig for HelixScreen ESP32-S3. These are applied on first build;
+# `idf.py menuconfig` writes overrides to ./sdkconfig (gitignored).
+#
+# Tuned for the Waveshare ESP32-S3-Touch-LCD-2.8 (ESP32-S3, 8MB PSRAM, 16MB flash).
+# Verify the exact PSRAM/flash size against your board variant before flashing.
+
+# --- Target ---
+CONFIG_IDF_TARGET="esp32s3"
+
+# --- Flash: 16MB, custom partition table (see partitions.csv) ---
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# --- PSRAM: required. LVGL draw buffers + WebSocket/JSON live here, not in the
+#     ~512KB internal SRAM. Octal SPI on most S3-N16R8 modules; switch to quad
+#     if your board uses an R2/R8 quad module. ---
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y
+CONFIG_SPIRAM_RODATA=y
+# Let malloc() fall back to PSRAM for large allocations automatically.
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=16384
+
+# --- CPU: run both cores at full clock; LVGL render is CPU-bound ---
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_FREERTOS_HZ=1000
+
+# --- Main task stack: JSON parsing + LVGL setup need headroom ---
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# --- WebSocket / TLS: ws:// to a LAN Moonraker by default. Enable the mbedTLS
+#     bits below only if you point at a wss:// endpoint. ---
+CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
+
+# --- mDNS: the default Moonraker host (mainsailos.local) is a .local name, so
+#     LWIP must answer mDNS queries to resolve it. Drop this if you use an IP. ---
+CONFIG_LWIP_DNS_SUPPORT_MDNS_QUERIES=y
+
+# --- Logging ---
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# --- Compiler: C++ exceptions off (smaller, ESP-IDF default). The skeleton is
+#     plain C; flip this if you port C++ from lib/helix-xml. ---
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+
+# --- LVGL (managed component lvgl/lvgl is configured via Kconfig) ------------
+# 16-bit color matches the ST7789 RGB565 panel. We drive lv_tick_inc ourselves
+# from an esp_timer, so disable LVGL's own tick source.
+CONFIG_LV_COLOR_DEPTH_16=y
+CONFIG_LV_TICK_CUSTOM=y
+CONFIG_LV_USE_OS=y
+# Montserrat 14 stays as LVGL's compile-time LV_FONT_DEFAULT (used until the UI
+# applies the Helix font on the active screen, and as a safe fallback). The
+# dashboard itself renders with the bundled Noto Sans fonts (src/fonts/).
+CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_DEFAULT_MONTSERRAT_14=y
+# Let LVGL's heap use PSRAM-backed malloc rather than its own static arena.
+CONFIG_LV_USE_STDLIB_MALLOC_CLIB=y
