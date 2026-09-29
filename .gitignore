@@ -7,3 +7,8 @@ sdkconfig.old
 
 # PlatformIO
 .pio/
+# PlatformIO writes the resolved config per env, and a top-level CMakeLists.txt
+# when the project has none; both are regenerated on every build.
+sdkconfig.*
+!sdkconfig.defaults
+/CMakeLists.txt
