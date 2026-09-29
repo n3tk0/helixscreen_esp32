@@ -4,9 +4,10 @@
 dependencies:
   idf: ">=5.1"
 
-  # LVGL 9 graphics library. The desktop HelixScreen pins 9.5; the 9.x line on
-  # the registry tracks releases — pin a matching minor if you port layouts.
-  lvgl/lvgl: "^9.2"
+  # LVGL 9 graphics library, pinned to the 9.6 line the firmware is built and
+  # tested against (patch updates only). 9.6 added per-flag setters such as
+  # lv_obj_set_hidden(), which the UI uses and older 9.x lacks.
+  lvgl/lvgl: "~9.6.0"
 
   # Moonraker transport: WebSocket JSON-RPC client.
   espressif/esp_websocket_client: "^1.2.0"

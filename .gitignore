@@ -12,3 +12,6 @@ sdkconfig.old
 sdkconfig.*
 !sdkconfig.defaults
 /CMakeLists.txt
+
+# tools/package_firmware.py
+/output/

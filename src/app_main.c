@@ -3,11 +3,12 @@
 // HelixScreen ESP32-S3 — entry point.
 //
 // Boot order:
-//   1. NVS (WiFi driver needs it)
-//   2. WiFi station — block until we have an IP
-//   3. Display + LVGL
-//   4. Build the dashboard UI
-//   5. Start the Moonraker WebSocket client (its own task)
+//   1. Power latch (must be first: on battery the board cuts out otherwise)
+//   2. NVS + saved settings
+//   3. WiFi station — returns at once, connects in the background (the UI
+//      reads its status and scans, so it must exist before the UI)
+//   4. Display + LVGL + touch, then the dashboard (or WiFi setup if unset)
+//   5. Moonraker WebSocket client (its own task; retries until WiFi is up)
 //   6. Pump LVGL forever on this (main) task, under the LVGL lock
 //
 // The Moonraker client task writes a mutex-guarded snapshot; the LVGL refresh
@@ -20,6 +21,8 @@
 #include "nvs_flash.h"
 #include "lvgl.h"
 
+#include "power.h"
+#include "settings.h"
 #include "wifi.h"
 #include "display.h"
 #include "ui.h"
@@ -29,6 +32,7 @@ static const char *TAG = "helix";
 
 void app_main(void)
 {
+    power_init();
     ESP_LOGI(TAG, "HelixScreen ESP32-S3 starting");
 
     esp_err_t err = nvs_flash_init();
@@ -37,8 +41,8 @@ void app_main(void)
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK(err);
-
-    wifi_connect_blocking();
+    settings_load();
+    wifi_start();
 
     if (!display_init()) {
         // No LVGL display exists, so ui_create() would dereference a NULL

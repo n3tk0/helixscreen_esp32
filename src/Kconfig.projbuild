@@ -3,21 +3,24 @@ menu "HelixScreen"
 
     config HELIX_WIFI_SSID
         string "WiFi SSID"
-        default "myssid"
+        default ""
         help
-            SSID of the network the printer's Moonraker host is on.
+            Optional. Normally left empty and set on the device: with no WiFi
+            saved, the screen opens WiFi setup on first boot. A value here is
+            only used until something is saved on the device.
 
     config HELIX_WIFI_PASSWORD
         string "WiFi Password"
-        default "mypassword"
+        default ""
         help
-            WPA2 password. Leave blank for an open network.
+            WPA2 password for the SSID above. Leave blank for an open network.
 
     config HELIX_MOONRAKER_HOST
         string "Moonraker host"
         default "mainsailos.local"
         help
             Hostname or IP of the Moonraker instance (no scheme, no port).
+            Can be changed on the device under Settings -> Printer.
             mDNS .local names work if CONFIG_LWIP_DNS_SUPPORT_MDNS_QUERIES is on.
 
     config HELIX_MOONRAKER_PORT
@@ -32,5 +35,13 @@ menu "HelixScreen"
         help
             Only needed if Moonraker's [authorization] requires it for your
             client's IP. Leave blank for a trusted LAN client.
+
+    config HELIX_DISPLAY_FLIP
+        bool "Rotate the display 180 degrees"
+        default n
+        help
+            The UI runs in landscape (320x240). Enable this if it appears
+            upside down for the way the board is mounted. Touch input is
+            rotated with it.
 
 endmenu
