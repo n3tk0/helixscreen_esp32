@@ -40,10 +40,11 @@ No computer needed after flashing:
 
 1. On first boot, with no WiFi saved, the screen opens the **WiFi networks**
    list and scans. Tap your network (or **Other network...** for a hidden one).
-2. Type the password. Text is entered from **one scrolling row** holding every
-   letter, digit and symbol: swipe the row, or tap **abc / ABC / 123 / #+=** to
-   jump to that part of it, then tap characters. The eye button shows/hides the
-   password; tap in the field to move the cursor.
+2. Type the password. Text is entered from **one scrolling row** of
+   characters. The button at its left opens a pop-up to switch the row between
+   **Letters**, **Numbers** and **Symbols**. Tap a letter for lowercase, **hold
+   it** for the capital. Swipe the row to see more. The eye button shows/hides
+   the password; tap in the field to move the cursor.
 3. **Connect** tries the password first and only saves it once the connection
    works. A wrong password or missing network is reported with **Try again**,
    and cancelling goes back to the previously saved network.
@@ -148,7 +149,7 @@ manager fetches `lvgl/lvgl` and `espressif/esp_websocket_client` (see
     ├── display.c/.h        ST7789 + LVGL wiring (PINS HERE)
     ├── ui_common.c/.h      theme colours, fonts, screen/header/button helpers
     ├── ui_settings.c/.h    settings menu, WiFi scanner, connect, printer address
-    ├── ui_textinput.c/.h   single-row character entry
+    ├── ui_textinput.c/.h   single-row character entry with group filter
     ├── settings.c/.h       NVS-backed settings (menuconfig as defaults)
     ├── touch.c/.h          CST328 touch → LVGL pointer input
     ├── power.c/.h          battery power latch + power key

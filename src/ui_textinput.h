@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// Text entry without a full keyboard: one horizontally scrolling row with every
-// letter, digit and symbol, plus jump buttons to each section of the row.
+// Text entry without a full keyboard: one horizontally scrolling row of
+// characters, with a filter button beside it that switches the row between
+// letters, numbers and symbols. Tap a letter for lowercase, hold it for the
+// capital.
 #pragma once
 
 #include <stdbool.h>
