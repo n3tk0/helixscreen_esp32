@@ -14,6 +14,8 @@
 #include "cJSON.h"
 #include "sdkconfig.h"
 
+#include "settings.h"
+
 static const char *TAG = "moonraker";
 
 static esp_websocket_client_handle_t s_client;
@@ -49,12 +51,35 @@ static void state_unlock(void) { xSemaphoreGive(s_lock); }
 
 // The only task that writes to the socket. Sends use a bounded timeout, so a
 // dead link costs this task a couple of seconds — never the UI.
+static void build_uri(char *uri, size_t cap)
+{
+    helix_settings_t cfg;
+    settings_get(&cfg);
+    snprintf(uri, cap, "ws://%s:%u/websocket", cfg.host, (unsigned)cfg.port);
+}
+
+// Point the client at the saved host. Runs on the TX task: stop() must not be
+// called from the WebSocket task and can block, so not from the LVGL task.
+static void reconnect_to_saved_host(void)
+{
+    static char uri[HELIX_HOST_MAX + 32];
+    build_uri(uri, sizeof(uri));
+    ESP_LOGI(TAG, "reconnecting to %s", uri);
+    esp_websocket_client_stop(s_client);
+    esp_websocket_client_set_uri(s_client, uri);
+    esp_websocket_client_start(s_client);
+}
+
 static void tx_task(void *arg)
 {
     (void)arg;
     char *msg;
     for (;;) {
         if (xQueueReceive(s_tx_queue, &msg, portMAX_DELAY) != pdTRUE) continue;
+        if (msg == NULL) {                       // moonraker_client_reconnect()
+            if (s_client) reconnect_to_saved_host();
+            continue;
+        }
         if (s_client && esp_websocket_client_is_connected(s_client)) {
             int sent = esp_websocket_client_send_text(s_client, msg, strlen(msg),
                                                       pdMS_TO_TICKS(TX_SEND_TIMEOUT_MS));
@@ -115,7 +140,7 @@ static void identify(void)
 {
     cJSON *params = cJSON_CreateObject();
     cJSON_AddStringToObject(params, "client_name", "HelixScreen-ESP32");
-    cJSON_AddStringToObject(params, "version", "0.1.0");
+    cJSON_AddStringToObject(params, "version", HELIX_FW_VERSION);
     cJSON_AddStringToObject(params, "type", "display");
     cJSON_AddStringToObject(params, "url", "https://github.com/n3tk0/helixscreen_esp32");
 #if defined(CONFIG_HELIX_MOONRAKER_API_KEY)
@@ -322,9 +347,8 @@ void moonraker_client_start(void)
         }
     }
 
-    char uri[160];
-    snprintf(uri, sizeof(uri), "ws://%s:%d/websocket",
-             CONFIG_HELIX_MOONRAKER_HOST, CONFIG_HELIX_MOONRAKER_PORT);
+    char uri[HELIX_HOST_MAX + 32];
+    build_uri(uri, sizeof(uri));
     ESP_LOGI(TAG, "connecting to %s", uri);
 
     esp_websocket_client_config_t cfg = {
@@ -362,6 +386,12 @@ void moonraker_send_gcode(const char *gcode)
     cJSON *params = cJSON_CreateObject();
     cJSON_AddStringToObject(params, "script", gcode);
     rpc_call("printer.gcode.script", params);
+}
+
+void moonraker_client_reconnect(void)
+{
+    char *none = NULL;   // sentinel understood by tx_task
+    if (s_tx_queue) xQueueSend(s_tx_queue, &none, 0);
 }
 
 void moonraker_emergency_stop(void) { rpc_call("printer.emergency_stop", NULL); }

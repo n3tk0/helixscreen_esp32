@@ -39,6 +39,10 @@ typedef struct {
 // client (its own task) and kicks off identify + object subscription.
 void moonraker_client_start(void);
 
+// Reconnect to the host/port currently in settings (after the user changed
+// them). Non-blocking.
+void moonraker_client_reconnect(void);
+
 // Thread-safe snapshot copy. Safe to call from the LVGL/UI task.
 void moonraker_get_state(helix_printer_state_t *out);
 

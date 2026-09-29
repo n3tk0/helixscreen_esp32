@@ -6,6 +6,10 @@ idf_component_register(
         "moonraker_client.c"
         "display.c"
         "ui.c"
+        "ui_common.c"
+        "ui_textinput.c"
+        "ui_settings.c"
+        "settings.c"
         "touch.c"
         "power.c"
         # Helix typeface — LVGL font arrays restored from the parent project

@@ -4,14 +4,12 @@
 //
 // Boot order:
 //   1. Power latch (must be first: on battery the board cuts out otherwise)
-//   2. NVS (WiFi driver needs it)
-//   3. Display + LVGL + touch, then the dashboard UI
-//   4. WiFi station, connecting in the background
+//   2. NVS + saved settings
+//   3. WiFi station — returns at once, connects in the background (the UI
+//      reads its status and scans, so it must exist before the UI)
+//   4. Display + LVGL + touch, then the dashboard (or WiFi setup if unset)
 //   5. Moonraker WebSocket client (its own task; retries until WiFi is up)
 //   6. Pump LVGL forever on this (main) task, under the LVGL lock
-//
-// Display comes before WiFi so the screen shows "connecting..." instead of
-// staying black while the network comes up (or never does).
 //
 // The Moonraker client task writes a mutex-guarded snapshot; the LVGL refresh
 // timer reads it. No LVGL call ever happens off this task. That separation is
@@ -24,6 +22,7 @@
 #include "lvgl.h"
 
 #include "power.h"
+#include "settings.h"
 #include "wifi.h"
 #include "display.h"
 #include "ui.h"
@@ -42,6 +41,8 @@ void app_main(void)
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK(err);
+    settings_load();
+    wifi_start();
 
     if (!display_init()) {
         // No LVGL display exists, so ui_create() would dereference a NULL
@@ -55,7 +56,6 @@ void app_main(void)
         display_lvgl_unlock();
     }
 
-    wifi_start();
     moonraker_client_start();
 
     // LVGL main loop. lv_timer_handler() must be serialized against any other

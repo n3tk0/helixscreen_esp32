@@ -34,10 +34,32 @@ If the UI shows upside down for how you mount the board, enable
 **HelixScreen → Rotate the display 180 degrees** in menuconfig; touch follows.
 On battery, hold the power key to switch on, and hold it for 2 s to switch off.
 
+## Setting it up (on the device)
+
+No computer needed after flashing:
+
+1. On first boot, with no WiFi saved, the screen opens the **WiFi networks**
+   list and scans. Tap your network (or **Other network...** for a hidden one).
+2. Type the password. Text is entered from **one scrolling row** holding every
+   letter, digit and symbol: swipe the row, or tap **abc / ABC / 123 / #+=** to
+   jump to that part of it, then tap characters. The eye button shows/hides the
+   password; tap in the field to move the cursor.
+3. **Connect** tries the password first and only saves it once the connection
+   works. A wrong password or missing network is reported with **Try again**,
+   and cancelling goes back to the previously saved network.
+4. Open **Settings** (gear, top right of the dashboard) → **Printer** and enter
+   your Moonraker address, e.g. `192.168.1.20` or `mainsailos.local:7125`.
+
+Settings are stored in flash (NVS) and survive updates. The menuconfig values
+(`pio run -t menuconfig` → HelixScreen) are only defaults until something is
+saved on the device.
+
 ## What works in this skeleton
 
-- WiFi station bring-up in the background; the screen shows "connecting..."
-  meanwhile (`wifi.c`)
+- WiFi in the background with retry/backoff, network scan, and
+  test-before-save credential changes (`wifi.c`)
+- On-device settings: WiFi scanner, single-row text entry, printer address
+  (`ui_settings.c`, `ui_textinput.c`), saved to NVS (`settings.c`)
 - Moonraker WebSocket client: identify, `printer.objects.subscribe`, parses
   pushed `notify_status_update` frames into a thread-safe snapshot
   (`moonraker_client.c`)
@@ -60,7 +82,33 @@ On battery, hold the power key to switch on, and hold it for 2 s to switch off.
 | **File browser / print start** | — | `server.files.list` + `printer.print.start` not yet surfaced in the UI. |
 | **HelixScreen XML layouts** | — | This skeleton hand-builds LVGL in C. Porting the parent project's `helix-xml` engine (expat + runtime parsing) is a separate, RAM-sensitive investigation. |
 
-## Build & flash
+## Getting the firmware
+
+### Ready-made (GitHub Actions)
+
+`.github/workflows/build-firmware.yml` builds every push and pull request, and
+can be started by hand under **Actions → Build Firmware → Run workflow**. Each
+run's summary page has an artifact with:
+
+| File | Flash at | Use |
+|------|----------|-----|
+| `helixscreen-esp32s3-<version>-full.bin` | `0x0` | first install, or to reset a board |
+| `helixscreen-esp32s3-<version>-app.bin` | `0x10000` | update a board already running it |
+| `SHA256SUMS` | | checksums |
+
+Publishing a **GitHub Release** builds it with the release tag as the version
+and attaches these files to the release.
+
+Flash the full image with the [ESP web flasher](https://espressif.github.io/esptool-js/)
+(Chrome/Edge, USB) at address `0x0`, or:
+
+```bash
+esptool.py --chip esp32s3 write_flash 0x0 helixscreen-esp32s3-<version>-full.bin
+```
+
+If the board doesn't show up, hold **BOOT**, tap **RESET**, release **BOOT**.
+
+### Building yourself
 
 Built with **[PlatformIO](https://platformio.org/)** using the **ESP-IDF**
 framework. The pinned `platform = espressif32` provides ESP-IDF 5.x.
@@ -70,15 +118,15 @@ framework. The pinned `platform = espressif32` provides ESP-IDF 5.x.
 pio run                  # build
 pio run -t upload        # flash
 pio device monitor       # serial monitor
+pio run -t menuconfig    # optional build-time defaults (HelixScreen menu)
 
-# Set WiFi creds + Moonraker host (HelixScreen menu):
-pio run -t menuconfig
+# the same release files CI makes, into output/
+python3 tools/package_firmware.py --env waveshare_s3_touch_28 --name helixscreen-esp32s3-dev
 ```
 
 On first build PlatformIO installs the ESP-IDF toolchain, and the IDF component
 manager fetches `lvgl/lvgl` and `espressif/esp_websocket_client` (see
-`src/idf_component.yml`) — needs network access once. CI builds the same way on
-GitHub runners via `.github/workflows/esp32-firmware.yml`.
+`src/idf_component.yml`) — needs network access once.
 
 > Plain `idf.py` is not wired up — this project uses PlatformIO's `src/` layout.
 > Use `pio run -t menuconfig` for the ESP-IDF config UI.
@@ -90,6 +138,7 @@ GitHub runners via `.github/workflows/esp32-firmware.yml`.
 ├── platformio.ini         PlatformIO env (board, framework, partitions)
 ├── sdkconfig.defaults      target, PSRAM, LVGL, flash/partition defaults
 ├── partitions.csv          16MB flash layout
+├── tools/package_firmware.py   full/app images + size check (used by CI)
 ├── docs/
 │   └── moonraker-reference.md  full Moonraker method roadmap
 └── src/
@@ -97,6 +146,10 @@ GitHub runners via `.github/workflows/esp32-firmware.yml`.
     ├── wifi.c/.h           WiFi station bring-up
     ├── moonraker_client.c/.h   WebSocket JSON-RPC client + snapshot
     ├── display.c/.h        ST7789 + LVGL wiring (PINS HERE)
+    ├── ui_common.c/.h      theme colours, fonts, screen/header/button helpers
+    ├── ui_settings.c/.h    settings menu, WiFi scanner, connect, printer address
+    ├── ui_textinput.c/.h   single-row character entry
+    ├── settings.c/.h       NVS-backed settings (menuconfig as defaults)
     ├── touch.c/.h          CST328 touch → LVGL pointer input
     ├── power.c/.h          battery power latch + power key
     ├── ui.c/.h             the dashboard (Helix tokens inlined)

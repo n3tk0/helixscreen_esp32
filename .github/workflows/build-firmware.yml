@@ -1,0 +1,112 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Build the HelixScreen ESP32-S3 firmware with PlatformIO on GitHub's runners.
+#
+# Triggers:
+#   - push / pull request
+#   - manual:  Actions -> Build Firmware -> Run workflow
+#   - release: publishing a GitHub Release attaches the files to it
+#
+# Outputs (artifact "helixscreen-esp32s3-<version>", and release assets):
+#   helixscreen-esp32s3-<version>-full.bin  flash at 0x0 on a new board
+#   helixscreen-esp32s3-<version>-app.bin   flash at 0x10000 to update
+#   SHA256SUMS
+#
+# <version> is the release tag for releases, else "git-<short sha>". It is also
+# compiled in (HELIX_FW_VERSION) and shown under Settings -> About.
+
+name: Build Firmware
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    name: Build (PlatformIO / ESP-IDF)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PIO_ENV: waveshare_s3_touch_28
+    outputs:
+      name: ${{ steps.version.outputs.name }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini', 'src/idf_component.yml') }}
+          restore-keys: |
+            pio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Work out the version
+        id: version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "release" ]; then
+            VERSION="$TAG"
+          else
+            VERSION="git-${GITHUB_SHA::7}"
+          fi
+          # Keep it safe for a file name and a C string literal.
+          VERSION=$(printf '%s' "$VERSION" | tr -c 'A-Za-z0-9._-' '_')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "name=helixscreen-esp32s3-$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
+
+      - name: Build firmware
+        env:
+          PLATFORMIO_BUILD_FLAGS: -DHELIX_FW_VERSION=\"${{ steps.version.outputs.version }}\"
+        run: pio run -e "$PIO_ENV"
+
+      # Fails if the app no longer fits the factory partition, then writes the
+      # full and app-only images plus checksums to output/.
+      - name: Package images and check size
+        run: |
+          python3 tools/package_firmware.py --env "$PIO_ENV" \
+            --name "${{ steps.version.outputs.name }}" --out output \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.version.outputs.name }}
+          path: output/
+          if-no-files-found: error
+
+  attach-to-release:
+    needs: build
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download build
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.name }}
+          path: firmware/
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: firmware/*
