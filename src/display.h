@@ -12,9 +12,10 @@ extern "C" {
 #define HELIX_LCD_H_RES 320
 #define HELIX_LCD_V_RES 240
 
-// Init the ST7789 panel over SPI and register an LVGL display. After this
-// returns, LVGL is live and lv_timer_handler() may be pumped.
-void display_init(void);
+// Init the ST7789 panel over SPI and register an LVGL display. On success LVGL
+// is live and lv_timer_handler() may be pumped. Returns false if the display
+// could not be created (e.g. draw buffers didn't fit) — LVGL must not be used.
+bool display_init(void);
 
 // LVGL is NOT thread-safe. Any task touching LVGL objects (the UI task, or a
 // callback that mutates widgets) must hold this lock. The main loop that calls

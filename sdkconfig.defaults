@@ -50,15 +50,18 @@ CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 
 # --- LVGL (managed component lvgl/lvgl is configured via Kconfig) ------------
-# 16-bit color matches the ST7789 RGB565 panel. We drive lv_tick_inc ourselves
-# from an esp_timer, so disable LVGL's own tick source.
+# 16-bit color matches the ST7789 RGB565 panel. (LVGL 9 has no LV_TICK_CUSTOM;
+# the tick comes from lv_tick_inc() on an esp_timer in display.c.)
 CONFIG_LV_COLOR_DEPTH_16=y
-CONFIG_LV_TICK_CUSTOM=y
-CONFIG_LV_USE_OS=y
+# No LVGL OS layer, on purpose: a single task drives LVGL and every access is
+# serialized by our own mutex (display_lvgl_lock), so LVGL's internal
+# locking/threads would add nothing.
+CONFIG_LV_OS_NONE=y
 # Montserrat 14 stays as LVGL's compile-time LV_FONT_DEFAULT (used until the UI
 # applies the Helix font on the active screen, and as a safe fallback). The
 # dashboard itself renders with the bundled Noto Sans fonts (src/fonts/).
 CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_DEFAULT_MONTSERRAT_14=y
-# Let LVGL's heap use PSRAM-backed malloc rather than its own static arena.
-CONFIG_LV_USE_STDLIB_MALLOC_CLIB=y
+# Use the C library malloc instead of LVGL's fixed 64KB pool in internal RAM,
+# so large LVGL allocations can land in PSRAM (CONFIG_SPIRAM_USE_MALLOC).
+CONFIG_LV_USE_CLIB_MALLOC=y

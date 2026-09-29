@@ -71,6 +71,17 @@ static void lvgl_tick_cb(void *arg)
     lv_tick_inc(2);
 }
 
+// SPI DMA reads straight from these, so the SRAM fallback must be DMA-capable.
+static void *alloc_draw_buf(size_t size)
+{
+    void *buf = heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
+    if (!buf) {
+        ESP_LOGW(TAG, "PSRAM draw buffer alloc failed, using internal SRAM");
+        buf = heap_caps_malloc(size, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    }
+    return buf;
+}
+
 bool display_lvgl_lock(int timeout_ms)
 {
     if (!s_lvgl_mutex) return false;
@@ -132,33 +143,30 @@ static void panel_init(void)
     gpio_set_level(PIN_LCD_BL, 1);
 }
 
-void display_init(void)
+bool display_init(void)
 {
     s_lvgl_mutex = xSemaphoreCreateRecursiveMutex();
+    if (!s_lvgl_mutex) {
+        ESP_LOGE(TAG, "failed to create LVGL mutex");
+        return false;
+    }
 
     panel_init();
 
     lv_init();
 
-    // Two partial draw buffers (1/10 screen each) in PSRAM. Enough for smooth
-    // partial-refresh rendering without eating internal SRAM.
+    // Two partial draw buffers, 1/10 screen each (2 x 15KB). Size them from the
+    // RGB565 pixel size — NOT sizeof(lv_color_t), which in LVGL 9 is the 3-byte
+    // RGB888 struct and would over-allocate by 50%.
     const size_t buf_px   = HELIX_LCD_H_RES * HELIX_LCD_V_RES / 10;
-    const size_t buf_size = buf_px * sizeof(lv_color_t);
-    // Prefer PSRAM; fall back to internal SRAM (~30KB total) on boards without
-    // PSRAM rather than aborting on a failed assert.
-    lv_color_t *buf1 = heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM);
-    if (!buf1) {
-        ESP_LOGW(TAG, "buf1 PSRAM alloc failed, using internal SRAM");
-        buf1 = heap_caps_malloc(buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    }
-    lv_color_t *buf2 = heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM);
-    if (!buf2) {
-        ESP_LOGW(TAG, "buf2 PSRAM alloc failed, using internal SRAM");
-        buf2 = heap_caps_malloc(buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    }
+    const size_t buf_size = buf_px * lv_color_format_get_size(LV_COLOR_FORMAT_RGB565);
+    void *buf1 = alloc_draw_buf(buf_size);
+    void *buf2 = alloc_draw_buf(buf_size);
     if (!buf1 || !buf2) {
         ESP_LOGE(TAG, "failed to allocate display buffers");
-        return;
+        heap_caps_free(buf1);   // NULL-safe
+        heap_caps_free(buf2);
+        return false;
     }
 
     lv_display_t *disp = lv_display_create(HELIX_LCD_H_RES, HELIX_LCD_V_RES);
@@ -187,4 +195,5 @@ void display_init(void)
     // an lv_indev with a read_cb that reports points. Without this the UI
     // renders but is not interactive. See the Waveshare touch example + the
     // esp_lcd_touch_* components on the registry.
+    return true;
 }

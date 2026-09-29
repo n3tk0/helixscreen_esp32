@@ -2,10 +2,13 @@
 #include "moonraker_client.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_websocket_client.h"
 #include "cJSON.h"
@@ -16,7 +19,26 @@ static const char *TAG = "moonraker";
 static esp_websocket_client_handle_t s_client;
 static SemaphoreHandle_t             s_lock;       // guards s_state
 static helix_printer_state_t         s_state;
-static int                           s_next_id = 1;
+static int                           s_next_id = 1;  // atomic: LVGL + WS tasks both send
+
+// Outbound JSON-RPC goes through a queue drained by a dedicated TX task, so
+// callers never block on the socket. That matters for the LVGL button
+// callbacks (E-STOP, pause, ...): they run on the main task WHILE it holds the
+// LVGL lock, and a stalled send there would freeze the whole UI.
+#define TX_QUEUE_LEN        16
+#define TX_SEND_TIMEOUT_MS  2000
+static QueueHandle_t                 s_tx_queue;   // char* (cJSON-allocated)
+
+// Inbound message reassembly. A text message larger than the client's
+// buffer_size arrives as several DATA events of one frame (payload_offset > 0),
+// and a peer may also split it into continuation frames (op_code 0x0). Only the
+// WebSocket task touches these, so they need no lock.
+#define RX_MAX_MSG          (64 * 1024)
+static char                         *s_rx_buf;
+static size_t                        s_rx_len;
+static size_t                        s_rx_cap;
+static bool                          s_rx_active;    // inside a text message
+static bool                          s_rx_overflow;  // current message is being discarded
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -25,18 +47,30 @@ static int                           s_next_id = 1;
 static void state_lock(void)   { xSemaphoreTake(s_lock, portMAX_DELAY); }
 static void state_unlock(void) { xSemaphoreGive(s_lock); }
 
-// Send a pre-serialized JSON-RPC string over the socket.
-static void ws_send(const char *json)
+// The only task that writes to the socket. Sends use a bounded timeout, so a
+// dead link costs this task a couple of seconds — never the UI.
+static void tx_task(void *arg)
 {
-    if (!s_client || !esp_websocket_client_is_connected(s_client)) {
-        ESP_LOGW(TAG, "drop (not connected): %s", json);
-        return;
+    (void)arg;
+    char *msg;
+    for (;;) {
+        if (xQueueReceive(s_tx_queue, &msg, portMAX_DELAY) != pdTRUE) continue;
+        if (s_client && esp_websocket_client_is_connected(s_client)) {
+            int sent = esp_websocket_client_send_text(s_client, msg, strlen(msg),
+                                                      pdMS_TO_TICKS(TX_SEND_TIMEOUT_MS));
+            if (sent < 0) {
+                ESP_LOGW(TAG, "send failed/timed out: %s", msg);
+            }
+        } else {
+            ESP_LOGW(TAG, "drop (not connected): %s", msg);
+        }
+        cJSON_free(msg);
     }
-    esp_websocket_client_send_text(s_client, json, strlen(json), portMAX_DELAY);
 }
 
-// Build + send a JSON-RPC request with no params (or caller-supplied params
-// object, which we take ownership of). `params` may be NULL.
+// Build a JSON-RPC request and queue it for the TX task. Never blocks: if the
+// queue is full the request is dropped and logged. `params` (may be NULL) is
+// taken over by the request object.
 static void rpc_call(const char *method, cJSON *params)
 {
     cJSON *root = cJSON_CreateObject();
@@ -45,14 +79,17 @@ static void rpc_call(const char *method, cJSON *params)
     if (params) {
         cJSON_AddItemToObject(root, "params", params);
     }
-    cJSON_AddNumberToObject(root, "id", s_next_id++);
+    cJSON_AddNumberToObject(root, "id",
+                            __atomic_fetch_add(&s_next_id, 1, __ATOMIC_RELAXED));
 
     char *txt = cJSON_PrintUnformatted(root);
-    if (txt) {
-        ws_send(txt);
+    cJSON_Delete(root);
+    if (!txt) return;
+
+    if (!s_tx_queue || xQueueSend(s_tx_queue, &txt, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "TX queue full/unavailable, dropping: %s", txt);
         cJSON_free(txt);
     }
-    cJSON_Delete(root);
 }
 
 // ---------------------------------------------------------------------------
@@ -172,6 +209,62 @@ static void handle_message(const char *data, int len)
     cJSON_Delete(root);
 }
 
+// Feed one DATA event into the reassembly buffer; dispatch the message once
+// its last slice arrives. Every slice of a frame carries that frame's op_code,
+// fin and payload_len, with payload_offset advancing.
+static void on_ws_data(const esp_websocket_event_data_t *d)
+{
+    switch (d->op_code) {
+    case 0x1:   // text frame (first slice starts a new message)
+        if (d->payload_offset == 0) {
+            s_rx_len      = 0;
+            s_rx_active   = true;
+            s_rx_overflow = false;
+        }
+        break;
+    case 0x0:   // continuation frame of a fragmented message
+        break;
+    default:    // ping/pong/close/binary — not part of a text message
+        return;
+    }
+    if (!s_rx_active) return;   // continuation with no message started
+
+    if (!s_rx_overflow && d->data_len > 0) {
+        size_t need = s_rx_len + (size_t)d->data_len;
+        if (need > RX_MAX_MSG) {
+            ESP_LOGW(TAG, "message exceeds %d bytes, dropping", RX_MAX_MSG);
+            s_rx_overflow = true;
+        } else {
+            if (need > s_rx_cap) {
+                size_t cap = s_rx_cap ? s_rx_cap : 4096;
+                while (cap < need) cap *= 2;
+                if (cap > RX_MAX_MSG) cap = RX_MAX_MSG;
+                // Large buffers land in PSRAM via CONFIG_SPIRAM_USE_MALLOC.
+                char *grown = realloc(s_rx_buf, cap);
+                if (grown) {
+                    s_rx_buf = grown;
+                    s_rx_cap = cap;
+                } else {
+                    ESP_LOGE(TAG, "rx buffer alloc failed (%u bytes)", (unsigned)cap);
+                    s_rx_overflow = true;
+                }
+            }
+            if (!s_rx_overflow) {
+                memcpy(s_rx_buf + s_rx_len, d->data_ptr, d->data_len);
+                s_rx_len = need;
+            }
+        }
+    }
+
+    const bool frame_done = d->payload_offset + d->data_len >= d->payload_len;
+    if (frame_done && d->fin) {
+        if (!s_rx_overflow && s_rx_len > 0) {
+            handle_message(s_rx_buf, (int)s_rx_len);
+        }
+        s_rx_active = false;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // WebSocket lifecycle
 // ---------------------------------------------------------------------------
@@ -196,16 +289,11 @@ static void ws_event_handler(void *arg, esp_event_base_t base,
         state_lock();
         s_state.connected = false;
         state_unlock();
+        s_rx_active = false;   // a half-received message is gone with the link
         break;
 
     case WEBSOCKET_EVENT_DATA:
-        // op_code 0x1 == text frame; ignore pings/pongs/continuations here.
-        // Note: large frames arrive in fragments — a production client must
-        // reassemble using d->payload_offset / d->payload_len. Dashboard-sized
-        // status frames fit in one buffer, so the skeleton parses directly.
-        if (d->op_code == 0x1 && d->data_len > 0) {
-            handle_message((const char *)d->data_ptr, d->data_len);
-        }
+        on_ws_data(d);
         break;
 
     default:
@@ -225,6 +313,15 @@ void moonraker_client_start(void)
         strcpy(s_state.print_state, "offline");
     }
 
+    if (!s_tx_queue) {
+        s_tx_queue = xQueueCreate(TX_QUEUE_LEN, sizeof(char *));
+        if (!s_tx_queue ||
+            xTaskCreate(tx_task, "moonraker_tx", 4096, NULL, 5, NULL) != pdPASS) {
+            ESP_LOGE(TAG, "failed to start TX task");
+            return;
+        }
+    }
+
     char uri[160];
     snprintf(uri, sizeof(uri), "ws://%s:%d/websocket",
              CONFIG_HELIX_MOONRAKER_HOST, CONFIG_HELIX_MOONRAKER_PORT);
@@ -234,7 +331,7 @@ void moonraker_client_start(void)
         .uri                 = uri,
         .reconnect_timeout_ms = 5000,
         .network_timeout_ms   = 10000,
-        // Moonraker status frames can be a few KB; give the RX buffer room.
+        // Per-read chunk size; larger messages are reassembled in on_ws_data.
         .buffer_size          = 4096,
     };
 

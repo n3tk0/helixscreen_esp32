@@ -43,6 +43,8 @@ void moonraker_client_start(void);
 void moonraker_get_state(helix_printer_state_t *out);
 
 // --- Control surface (fire-and-forget JSON-RPC) -------------------------------
+// Requests are queued to a TX task and never block the caller, so these are
+// safe to call from LVGL event callbacks while the LVGL lock is held.
 // Each maps to one Moonraker method. Run any G-code via send_gcode (covers
 // moves, homing, M104/M140 temp sets, fans, etc.).
 void moonraker_send_gcode(const char *gcode);

@@ -40,7 +40,12 @@ void app_main(void)
 
     wifi_connect_blocking();
 
-    display_init();
+    if (!display_init()) {
+        // No LVGL display exists, so ui_create() would dereference a NULL
+        // screen. Stop here; the error is already logged.
+        ESP_LOGE(TAG, "display init failed, not starting UI");
+        return;
+    }
 
     if (display_lvgl_lock(-1)) {
         ui_create();
