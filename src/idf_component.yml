@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# ESP-IDF Component Manager manifest. `idf.py build` fetches these from the
+# component registry on first build (needs network access once).
+dependencies:
+  idf: ">=5.1"
+
+  # LVGL 9 graphics library. The desktop HelixScreen pins 9.5; the 9.x line on
+  # the registry tracks releases — pin a matching minor if you port layouts.
+  lvgl/lvgl: "^9.2"
+
+  # Moonraker transport: WebSocket JSON-RPC client.
+  espressif/esp_websocket_client: "^1.2.0"
+
+  # Optional: Espressif's LVGL port helper (display flush + tick + task/lock).
+  # The skeleton wires LVGL by hand in display.c to stay explicit, but this is
+  # the recommended production path — uncomment and adapt if you prefer it.
+  # espressif/esp_lvgl_port: "^2.3.0"

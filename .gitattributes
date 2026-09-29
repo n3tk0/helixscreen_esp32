@@ -1,4 +1,0 @@
-# Tell GitHub linguist to ignore GCODE files in language statistics
-assets/gcode/** linguist-vendored
-assets/test_gcodes/** linguist-vendored
-*.gcode linguist-vendored
