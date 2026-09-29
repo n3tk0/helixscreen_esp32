@@ -32,7 +32,7 @@ static void on_wifi_event(void *arg, esp_event_base_t base,
     }
 }
 
-void wifi_connect_blocking(void)
+void wifi_start(void)
 {
     s_wifi_events = xEventGroupCreate();
 
@@ -65,6 +65,4 @@ void wifi_connect_blocking(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "connecting to SSID '%s'...", CONFIG_HELIX_WIFI_SSID);
-    xEventGroupWaitBits(s_wifi_events, WIFI_CONNECTED_BIT,
-                        pdFALSE, pdTRUE, portMAX_DELAY);
 }

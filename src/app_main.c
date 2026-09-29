@@ -3,12 +3,15 @@
 // HelixScreen ESP32-S3 — entry point.
 //
 // Boot order:
-//   1. NVS (WiFi driver needs it)
-//   2. WiFi station — block until we have an IP
-//   3. Display + LVGL
-//   4. Build the dashboard UI
-//   5. Start the Moonraker WebSocket client (its own task)
+//   1. Power latch (must be first: on battery the board cuts out otherwise)
+//   2. NVS (WiFi driver needs it)
+//   3. Display + LVGL + touch, then the dashboard UI
+//   4. WiFi station, connecting in the background
+//   5. Moonraker WebSocket client (its own task; retries until WiFi is up)
 //   6. Pump LVGL forever on this (main) task, under the LVGL lock
+//
+// Display comes before WiFi so the screen shows "connecting..." instead of
+// staying black while the network comes up (or never does).
 //
 // The Moonraker client task writes a mutex-guarded snapshot; the LVGL refresh
 // timer reads it. No LVGL call ever happens off this task. That separation is
@@ -20,6 +23,7 @@
 #include "nvs_flash.h"
 #include "lvgl.h"
 
+#include "power.h"
 #include "wifi.h"
 #include "display.h"
 #include "ui.h"
@@ -29,6 +33,7 @@ static const char *TAG = "helix";
 
 void app_main(void)
 {
+    power_init();
     ESP_LOGI(TAG, "HelixScreen ESP32-S3 starting");
 
     esp_err_t err = nvs_flash_init();
@@ -37,8 +42,6 @@ void app_main(void)
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK(err);
-
-    wifi_connect_blocking();
 
     if (!display_init()) {
         // No LVGL display exists, so ui_create() would dereference a NULL
@@ -52,6 +55,7 @@ void app_main(void)
         display_lvgl_unlock();
     }
 
+    wifi_start();
     moonraker_client_start();
 
     // LVGL main loop. lv_timer_handler() must be serialized against any other

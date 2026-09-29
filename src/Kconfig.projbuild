@@ -33,4 +33,12 @@ menu "HelixScreen"
             Only needed if Moonraker's [authorization] requires it for your
             client's IP. Leave blank for a trusted LAN client.
 
+    config HELIX_DISPLAY_FLIP
+        bool "Rotate the display 180 degrees"
+        default n
+        help
+            The UI runs in landscape (320x240). Enable this if it appears
+            upside down for the way the board is mounted. Touch input is
+            rotated with it.
+
 endmenu

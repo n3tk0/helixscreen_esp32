@@ -13,23 +13,20 @@
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 #include "lvgl.h"
+#include "touch.h"
 
 static const char *TAG = "display";
 
 // ============================================================================
-// BOARD PINS — Waveshare ESP32-S3-Touch-LCD-2.8
-//
-// ⚠️  VERIFY these against the schematic/wiki for YOUR board revision before
-//     flashing. Pin maps differ across Waveshare LCD variants. The values
-//     below are placeholders in the layout the ST7789 SPI boards commonly use.
-//     Wiki: https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-2.8
+// BOARD PINS — Waveshare ESP32-S3-Touch-LCD-2.8 (verified against the board
+// schematic and Waveshare's ESP-IDF demo). LCD_MISO (GPIO46) is not needed.
 // ============================================================================
 #define PIN_LCD_SCLK   40
 #define PIN_LCD_MOSI   45
 #define PIN_LCD_DC     41
 #define PIN_LCD_CS     42
 #define PIN_LCD_RST    39
-#define PIN_LCD_BL     5     // backlight enable
+#define PIN_LCD_BL     5     // backlight via NPN transistor: high = on
 #define LCD_SPI_HOST   SPI2_HOST
 #define LCD_PIXEL_CLOCK_HZ (40 * 1000 * 1000)
 
@@ -94,6 +91,43 @@ void display_lvgl_unlock(void)
     if (s_lvgl_mutex) xSemaphoreGiveRecursive(s_lvgl_mutex);
 }
 
+// Waveshare's ST7789T register setup (porch, gate/VCOM voltages, gamma,
+// inversion), copied verbatim from their ESP-IDF demo driver, including the
+// 1-byte 0xD0 write. The generic esp_lcd ST7789 init only does sleep-out,
+// MADCTL and COLMOD, which leaves colours and gamma off on this glass.
+// MADCTL (0x36) is rewritten afterwards by swap_xy/mirror.
+static void send_vendor_init(esp_lcd_panel_io_handle_t io)
+{
+    static const struct {
+        uint8_t cmd;
+        uint8_t data[14];
+        uint8_t len;
+    } seq[] = {
+        {0x36, {0x00}, 1},
+        {0x3A, {0x55}, 1},                          // 16 bpp
+        {0xB0, {0x00, 0xE8}, 2},
+        {0xB2, {0x0C, 0x0C, 0x00, 0x33, 0x33}, 5},  // porch
+        {0xB7, {0x75}, 1},                          // gate control
+        {0xBB, {0x1A}, 1},                          // VCOM
+        {0xC0, {0x80}, 1},                          // LCM control
+        {0xC2, {0x01, 0xFF}, 2},
+        {0xC3, {0x13}, 1},                          // VRH
+        {0xC4, {0x20}, 1},                          // VDV
+        {0xC6, {0x0F}, 1},                          // 60 Hz
+        {0xD0, {0xA4}, 1},                          // power control
+        {0xE0, {0xD0, 0x0D, 0x14, 0x0D, 0x0D, 0x09, 0x38,
+                0x44, 0x4E, 0x3A, 0x17, 0x18, 0x2F, 0x30}, 14},  // +gamma
+        {0xE1, {0xD0, 0x09, 0x0F, 0x08, 0x07, 0x14, 0x37,
+                0x44, 0x4D, 0x38, 0x15, 0x16, 0x2C, 0x2E}, 14},  // -gamma
+        {0x21, {0}, 0},                             // inversion on
+    };
+    for (size_t i = 0; i < sizeof(seq) / sizeof(seq[0]); i++) {
+        ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(io, seq[i].cmd,
+                                                  seq[i].len ? seq[i].data : NULL,
+                                                  seq[i].len));
+    }
+}
+
 static void panel_init(void)
 {
     gpio_config_t bk = {
@@ -124,20 +158,27 @@ static void panel_init(void)
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi(
         (esp_lcd_spi_bus_handle_t)LCD_SPI_HOST, &io_cfg, &s_io));
 
+    // The panel is an ST7789T wired BGR (matches Waveshare's driver config).
     esp_lcd_panel_dev_config_t panel_cfg = {
         .reset_gpio_num = PIN_LCD_RST,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,
         .bits_per_pixel = 16,
     };
     ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(s_io, &panel_cfg, &s_panel));
 
     ESP_ERROR_CHECK(esp_lcd_panel_reset(s_panel));
     ESP_ERROR_CHECK(esp_lcd_panel_init(s_panel));
-    // 2.8" is a 240x320 glass driven in landscape (320x240) — swap + mirror.
-    // Adjust these three to match your board's orientation.
+    send_vendor_init(s_io);
+
+    // Native glass is 240x320 portrait; we run landscape 320x240. These are
+    // Waveshare's LV_DISP_ROT_90 / ROT_270 settings — the 180-degree flip is
+    // selectable in menuconfig. touch.c applies the matching coordinate map.
     ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(s_panel, true));
-    ESP_ERROR_CHECK(esp_lcd_panel_mirror(s_panel, true, false));
-    ESP_ERROR_CHECK(esp_lcd_panel_invert_color(s_panel, true));
+#if CONFIG_HELIX_DISPLAY_FLIP
+    ESP_ERROR_CHECK(esp_lcd_panel_mirror(s_panel, false, false));
+#else
+    ESP_ERROR_CHECK(esp_lcd_panel_mirror(s_panel, true, true));
+#endif
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_panel, true));
 
     gpio_set_level(PIN_LCD_BL, 1);
@@ -190,10 +231,9 @@ bool display_init(void)
 
     ESP_LOGI(TAG, "display + LVGL ready (%dx%d)", HELIX_LCD_H_RES, HELIX_LCD_V_RES);
 
-    // TODO(touch): init the capacitive touch controller (the 2.8" board uses an
-    // I2C controller — CST328/GT911-class depending on revision) and register
-    // an lv_indev with a read_cb that reports points. Without this the UI
-    // renders but is not interactive. See the Waveshare touch example + the
-    // esp_lcd_touch_* components on the registry.
+    // A touch failure is not fatal: the dashboard still shows live status.
+    if (!touch_init(disp)) {
+        ESP_LOGW(TAG, "touch unavailable, UI will be view-only");
+    }
     return true;
 }

@@ -13,17 +13,38 @@ WebSocket JSON-RPC API**.
 > history; it was removed when the repo was repurposed for the firmware —
 > recover it from git history if needed.)
 
-**Target board:** Waveshare ESP32-S3-Touch-LCD-2.8 (ESP32-S3, ST7789 320×240,
-capacitive touch, WiFi). Other ESP32-S3 + SPI-LCD boards work after adjusting
-pins in `src/display.c`.
+**Target board:** Waveshare ESP32-S3-Touch-LCD-2.8 (ESP32-S3R8 with 8 MB
+octal PSRAM, 16 MB flash, ST7789T 240×320 panel run in landscape, CST328
+capacitive touch). Other ESP32-S3 + SPI-LCD boards work after adjusting the
+pins in `src/display.c` and `src/touch.c`.
+
+### Board pins
+
+Checked against the board schematic and Waveshare's ESP-IDF demo.
+
+| Function | GPIO |
+|----------|------|
+| LCD SCK / MOSI / CS / D/C / RST | 40 / 45 / 42 / 41 / 39 |
+| LCD backlight (high = on) | 5 |
+| Touch SDA / SCL / INT / RST (CST328, I2C 0x1A) | 1 / 3 / 4 / 2 |
+| Power key / battery power latch | 6 / 7 |
+| I2C header, IMU (QMI8658) + RTC (PCF85063) — unused | SDA 11 / SCL 10 |
+
+If the UI shows upside down for how you mount the board, enable
+**HelixScreen → Rotate the display 180 degrees** in menuconfig; touch follows.
+On battery, hold the power key to switch on, and hold it for 2 s to switch off.
 
 ## What works in this skeleton
 
-- WiFi station bring-up (`wifi.c`)
+- WiFi station bring-up in the background; the screen shows "connecting..."
+  meanwhile (`wifi.c`)
 - Moonraker WebSocket client: identify, `printer.objects.subscribe`, parses
   pushed `notify_status_update` frames into a thread-safe snapshot
   (`moonraker_client.c`)
-- ST7789 + LVGL 9 display bring-up with PSRAM draw buffers (`display.c`)
+- ST7789T + LVGL 9 display bring-up with Waveshare's panel init sequence and
+  PSRAM draw buffers (`display.c`)
+- CST328 touch as an LVGL pointer input (`touch.c`)
+- Battery power latch and long-press power-off (`power.c`)
 - A live dashboard: nozzle/bed temps, print state, file, progress bar, and
   **Pause/Resume** + **E-STOP** buttons wired to real RPCs (`ui.c`)
 - **Real Helix look**: the actual Noto Sans typeface (`src/fonts/`) and the
@@ -35,9 +56,7 @@ pins in `src/display.c`.
 
 | Area | Where | Note |
 |------|-------|------|
-| **Touch input** | `display.c` → `TODO(touch)` | Display renders but isn't interactive until you add the I2C touch controller + `lv_indev`. Controller varies by board revision (CST328 / GT911-class). |
-| **Display pins** | `display.c` → `BOARD PINS` block | ⚠️ Verify against the Waveshare wiki for your revision before flashing. |
-| **WebSocket frame reassembly** | `moonraker_client.c` → `WEBSOCKET_EVENT_DATA` | Dashboard-sized frames fit one buffer; large replies (file lists) need fragment reassembly. |
+| **Untested on hardware** | `display.c`, `touch.c` | Builds cleanly, but panel orientation/colours and the touch coordinate mapping haven't been checked on a real board yet. |
 | **File browser / print start** | — | `server.files.list` + `printer.print.start` not yet surfaced in the UI. |
 | **HelixScreen XML layouts** | — | This skeleton hand-builds LVGL in C. Porting the parent project's `helix-xml` engine (expat + runtime parsing) is a separate, RAM-sensitive investigation. |
 
@@ -78,6 +97,8 @@ GitHub runners via `.github/workflows/esp32-firmware.yml`.
     ├── wifi.c/.h           WiFi station bring-up
     ├── moonraker_client.c/.h   WebSocket JSON-RPC client + snapshot
     ├── display.c/.h        ST7789 + LVGL wiring (PINS HERE)
+    ├── touch.c/.h          CST328 touch → LVGL pointer input
+    ├── power.c/.h          battery power latch + power key
     ├── ui.c/.h             the dashboard (Helix tokens inlined)
     ├── fonts/              Noto Sans LVGL font arrays (real Helix typeface)
     ├── CMakeLists.txt       IDF main-component register
@@ -95,7 +116,7 @@ thread separation.
 
 ## Roadmap ideas
 
-1. Add touch + a second screen (controls: jog, home, temp presets).
+1. A controls screen: jog, home, temperature presets.
 2. File browser via `server.files.list` → `printer.print.start`.
 3. Cache thumbnails to the `storage` SPIFFS partition.
 4. Evaluate running the parent project's `helix-xml` layouts directly vs. hand-built LVGL.
